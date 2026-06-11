@@ -32,45 +32,35 @@ app.add_middleware(
 # =========================
 # 🔐 Clerk Auth Middleware
 # =========================
-CLERK_ISSUER = os.getenv("CLERK_ISSUER")
-if not CLERK_ISSUER:
-    raise RuntimeError("CLERK_ISSUER is not set")
-
-CLERK_JWKS_URL = f"{CLERK_ISSUER}/.well-known/jwks.json"
+CLERK_ISSUER = os.getenv("CLERK_ISSUER", "")
+CLERK_JWKS_URL = f"{CLERK_ISSUER}/.well-known/jwks.json" if CLERK_ISSUER else ""
 
 _jwks_cache = None
 def get_jwks():
     global _jwks_cache
-    if _jwks_cache is None:
+    if _jwks_cache is None and CLERK_JWKS_URL:
         _jwks_cache = requests.get(CLERK_JWKS_URL).json()
     return _jwks_cache
 
 
 @app.middleware("http")
 async def clerk_auth_middleware(request: Request, call_next):
-    # 🔑 항상 기본값 먼저
-    request.state.user_id = None  # ⭐ 핵심
+    request.state.user_id = None
 
-    auth_header = request.headers.get("authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.replace("Bearer ", "")
-
-        try:
-            jwks = get_jwks()
-            payload = jwt.decode(
-                token,
-                jwks,
-                algorithms=["RS256"],
-                issuer=CLERK_ISSUER,
-                options={"verify_aud": False},
-            )
-
-            #clerk userid
-            request.state.user_id = payload.get("sub")
-
-        except Exception:
-            # 토큰 문제 → user_id는 None 유지
-            pass
+    if CLERK_ISSUER:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+            try:
+                jwks = get_jwks()
+                if jwks:
+                    payload = jwt.decode(
+                        token, jwks, algorithms=["RS256"],
+                        issuer=CLERK_ISSUER, options={"verify_aud": False},
+                    )
+                    request.state.user_id = payload.get("sub")
+            except Exception:
+                pass
 
     response = await call_next(request)
     return response

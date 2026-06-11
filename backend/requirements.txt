@@ -20,4 +20,4 @@ python-jose[cryptography]
 requests
 numpy<2
 pydantic
-chromadb
+chromadb==0.6.3
