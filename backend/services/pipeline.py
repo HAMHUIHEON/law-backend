@@ -1,13 +1,6 @@
 # backend/services/pipeline.py
 
 from pathlib import Path
-from bravo.full_pipeline import run_full_pipeline
-from export.full_report import (
-    run_export_pipeline_A,
-    run_export_pipeline_B,
-    run_export_pipeline_C,
-)
-
 from supabase import create_client
 from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, status, Request
@@ -59,6 +52,8 @@ def assert_user_is_subscriber(user_id: str) -> None:
 # 판례 분석
 def run_case_pipeline(case_id: str, pdf_path: Path, user_id: str):
     from utils.cache import load_cache
+    from bravo.full_pipeline import run_full_pipeline
+    from export.full_report import run_export_pipeline_A, run_export_pipeline_B, run_export_pipeline_C
 
     cache_hit = load_cache(case_id, "export_C_full.json") is not None
 

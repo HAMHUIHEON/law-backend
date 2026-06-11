@@ -34,6 +34,10 @@ cases/
 taxlaw/
 logs/
 
+# cache/ 하위 소스코드는 추적 (데이터 캐시만 제외)
+!backend/utils/cache/
+!backend/utils/cache/**
+
 # 서버 로그 임시 파일
 *.log
 backend_stderr.log
