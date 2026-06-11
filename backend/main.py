@@ -1,4 +1,9 @@
 # backend/main.py
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")  # 29_FINAL/.env (로컬 개발용)
+
 from fastapi import FastAPI, Request
 import requests
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +32,6 @@ app.add_middleware(
 # =========================
 # 🔐 Clerk Auth Middleware
 # =========================
-import os
 CLERK_ISSUER = os.getenv("CLERK_ISSUER")
 if not CLERK_ISSUER:
     raise RuntimeError("CLERK_ISSUER is not set")
