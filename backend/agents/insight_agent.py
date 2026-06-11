@@ -17,6 +17,8 @@
 #   - 보고서 품질: 판례번호·결론 등 구체적 근거 포함 강제
 
 import json
+import os
+from pathlib import Path
 from typing import List, Optional, TypedDict
 
 from langchain_core.messages import HumanMessage
@@ -28,6 +30,38 @@ from db.graph_search import LegalGraphSearch
 from export.export_chain import ExportCChain
 from export.models_export import ExportCInput
 from utils.cache import load_cache
+
+_CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
+_OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
+
+
+def _chroma_law_search(query: str, n: int = 6) -> list:
+    """Chroma law_articles에서 관련 조문 검색. Railway에 DB 없으면 빈 리스트 반환."""
+    try:
+        import chromadb
+        from chromadb.utils import embedding_functions
+        client = chromadb.PersistentClient(path=str(_CHROMA_DIR))
+        ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=_OPENAI_KEY or os.getenv("OPENAI_API_KEY", ""),
+            model_name="text-embedding-3-small",
+        )
+        col = client.get_collection("law_articles", embedding_function=ef)
+        res = col.query(query_texts=[query], n_results=min(n, col.count()))
+        docs = res["documents"][0] if res["documents"] else []
+        metas = res["metadatas"][0] if res["metadatas"] else []
+        return [
+            {
+                "law_name": m.get("law_name", ""),
+                "scope": m.get("scope", ""),
+                "article_no": m.get("article_no", ""),
+                "title": m.get("title", ""),
+                "domain": m.get("domain", ""),
+                "document": d,
+            }
+            for d, m in zip(docs, metas)
+        ]
+    except Exception:
+        return []
 
 _llm = None
 
@@ -53,7 +87,8 @@ class InsightState(TypedDict):
     # Executor 출력
     search_results: Optional[list]
     pattern_results: Optional[dict]
-    statute_results: Optional[list]
+    statute_results: Optional[list]    # 유지 (Neo4j graph 결과, 있으면 추가)
+    law_articles: Optional[list]       # Chroma law_articles 조문 검색 결과
 
     # Insight (case_id 있을 때)
     insight_result: Optional[dict]
@@ -105,33 +140,35 @@ def planner_node(state: InsightState) -> InsightState:
 
 def executor_node(state: InsightState) -> InsightState:
     """
-    단일 Neo4j 연결로 세 가지 조회를 일괄 실행:
-      - search_similar_issues: 쟁점별 유사 판례 (Planner가 분해한 모든 쿼리)
-      - analyze_winning_patterns: 주요 쿼리 기준 승소/패소 패턴
-      - get_statute_cases: 관련 법령별 판례 (법령명이 있을 때만)
+    Neo4j + Chroma 병렬 조회:
+      - search_similar_issues: 쟁점별 유사 판례 (Neo4j 벡터)
+      - analyze_winning_patterns: 승소/패소 패턴 (Neo4j 하이브리드)
+      - law_articles: 관련 조문 텍스트 (Chroma law_articles — 14개 세법 6,687조문)
+        statute_names가 있으면 법령명+쿼리 조합, 없으면 primary_query만 사용
     """
     queries = state["search_queries"] or [state["query"]]
     primary_query = queries[0]
 
+    # ① Neo4j 판례 검색 (유사 쟁점 + 패턴)
     s = LegalGraphSearch()
     try:
         all_search: list = []
         for q in queries:
             all_search.extend(s.search_similar_issues(q, top_k=5))
-
         pattern = s.analyze_winning_patterns(primary_query, top_k=10)
-
-        all_statutes: list = []
-        for name in state["statute_names"]:
-            all_statutes.extend(s.get_statute_cases(name))
     finally:
         s.close()
+
+    # ② Chroma 법령 조문 검색 (statute_names 기반 or primary_query)
+    law_query = " ".join(state["statute_names"]) + " " + primary_query if state["statute_names"] else primary_query
+    law_arts = _chroma_law_search(law_query, n=6)
 
     return {
         **state,
         "search_results": all_search,
         "pattern_results": pattern,
-        "statute_results": all_statutes,
+        "statute_results": [],   # Neo4j get_statute_cases 제거 (Chroma로 대체)
+        "law_articles": law_arts,
     }
 
 
@@ -196,7 +233,7 @@ def reporter_node(state: InsightState) -> InsightState:
     """
     search_block = _fmt_cases(state.get("search_results") or [])
     pattern_block = _fmt_pattern(state.get("pattern_results") or {})
-    statute_block = _fmt_statutes(state.get("statute_results") or [])
+    law_block = _fmt_law_articles(state.get("law_articles") or [])
 
     insight_block = ""
     if state.get("insight_result"):
@@ -212,7 +249,7 @@ def reporter_node(state: InsightState) -> InsightState:
             f"• 판례 시그널: {rv.get('precedent_signal', '')}"
         )
 
-    statute_section = f"\n[법령별 판례 현황]\n{statute_block}" if statute_block else ""
+    law_section = f"\n[관련 세법 조문]\n{law_block}" if law_block else ""
 
     prompt = (
         "당신은 조세법률 전문 리서치 센터의 수석 분석관이다.\n"
@@ -220,14 +257,15 @@ def reporter_node(state: InsightState) -> InsightState:
         f"[분석 요청]\n{state['query']}\n\n"
         f"[유사 판례 검색 결과]\n{search_block}\n\n"
         f"[승소/패소 패턴 분석]\n{pattern_block}"
-        f"{statute_section}"
+        f"{law_section}"
         f"{insight_block}\n\n"
         "[보고서 구성 — 반드시 아래 순서]\n"
         "1. 핵심 요약 (2~3문장): 판례군 전체를 관통하는 법리 방향성\n"
-        "2. 주요 판례 시사점 (3~5 bullet): 판례번호·법원명·판결 결론 반드시 포함\n"
-        "3. 승소 전략 포인트 (3~5 bullet): 패턴에서 도출한 구체적 전략, 수치/법령 근거 포함\n"
-        "4. 리스크 경고 (2~3 bullet): 납세자·과세관청 각각의 취약점과 리스크 현실화 조건\n"
-        "5. 실무 체크리스트 (3~5개): 지금 당장 행동 가능한 항목\n\n"
+        "2. 관련 세법 조문 (2~3 bullet): 조문 번호·내용 요약, 판례와 연결\n"
+        "3. 주요 판례 시사점 (3~5 bullet): 판례번호·법원명·판결 결론 반드시 포함\n"
+        "4. 승소 전략 포인트 (3~5 bullet): 패턴에서 도출한 구체적 전략, 수치/법령 근거 포함\n"
+        "5. 리스크 경고 (2~3 bullet): 납세자·과세관청 각각의 취약점과 리스크 현실화 조건\n"
+        "6. 실무 체크리스트 (3~5개): 지금 당장 행동 가능한 항목\n\n"
         "[엄격한 규칙]\n"
         "- 분석 데이터에 없는 판례·법령·사실 생성 절대 금지\n"
         "- '관련 법령을 검토해야 한다' 같은 추상적 조언 금지 → 구체적 조문·판례번호 명시\n"
@@ -280,12 +318,16 @@ def _fmt_pattern(pattern: dict) -> str:
     )
 
 
-def _fmt_statutes(statute_cases: list) -> str:
-    lines = [
-        f"• [{c.get('case_number', '')}] {c.get('statute', '')} "
-        f"{c.get('provision', '')} → {c.get('conclusion', '')}"
-        for c in statute_cases[:5]
-    ]
+def _fmt_law_articles(articles: list) -> str:
+    if not articles:
+        return ""
+    lines = []
+    for a in articles[:6]:
+        scope_label = {"law": "법", "decree": "시행령", "rule": "시행규칙"}.get(a.get("scope", ""), a.get("scope", ""))
+        preview = str(a.get("document", ""))[:120].replace("\n", " ")
+        lines.append(
+            f"• {a.get('law_name', '')}({scope_label}) {a.get('article_no', '')} {a.get('title', '')} — {preview}"
+        )
     return "\n".join(lines)
 
 
@@ -344,6 +386,7 @@ class InsightAgent:
             "search_results": None,
             "pattern_results": None,
             "statute_results": None,
+            "law_articles": None,
             "insight_result": None,
             "reflection": None,
             "retry_count": 0,
@@ -363,5 +406,6 @@ class InsightAgent:
             "query": final["query"],
             "final_report": final["final_report"],
             "insight": final["insight_result"],
+            "law_articles_context": final.get("law_articles") or [],
             "steps": steps,
         }
