@@ -8,8 +8,20 @@ from agents.multi_agent import SupervisorAgent
 from services.pipeline import get_current_user_id
 
 router = APIRouter()
-_agent = InsightAgent()
-_supervisor = SupervisorAgent()
+_agent: "InsightAgent | None" = None
+_supervisor: "SupervisorAgent | None" = None
+
+def _get_agent() -> InsightAgent:
+    global _agent
+    if _agent is None:
+        _agent = InsightAgent()
+    return _agent
+
+def _get_supervisor() -> SupervisorAgent:
+    global _supervisor
+    if _supervisor is None:
+        _supervisor = SupervisorAgent()
+    return _supervisor
 
 
 class InsightRequest(BaseModel):
@@ -29,7 +41,7 @@ def run_insight(
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query가 비어 있습니다.")
 
-    result = _agent.run(query=req.query, case_id=req.case_id)
+    result = _get_agent().run(query=req.query, case_id=req.case_id)
     return result
 
 
@@ -45,5 +57,5 @@ def run_multi(
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query가 비어 있습니다.")
 
-    result = _supervisor.run(query=req.query)
+    result = _get_supervisor().run(query=req.query)
     return result

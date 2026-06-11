@@ -88,3 +88,8 @@ app.include_router(taxtr.router, prefix="/api/taxtr", tags=["taxtr"])
 app.include_router(court.router, prefix="/api/court", tags=["court"])
 app.include_router(strategy.router, prefix="/api/strategy", tags=["strategy"])
 app.include_router(taxlaw_prec.router, prefix="/api/prec", tags=["prec"])
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

@@ -27,7 +27,13 @@ from operator import add as list_add
 from db.graph_search import LegalGraphSearch
 from db.itcl_search import ITCLSearch
 
-_llm = get_llm(model=DEFAULT_MODEL, temperature=0)
+_llm = None
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = get_llm(model=DEFAULT_MODEL, temperature=0)
+    return _llm
 
 _CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
 _OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -109,7 +115,7 @@ def supervisor_node(state: MultiAgentState) -> dict:
         "- 일반 전략·쟁점 분석 → 4개 모두 포함\n"
         "- 최소 2개 이상 선택"
     )
-    resp = _llm.invoke([HumanMessage(content=prompt)])
+    resp = _get_llm().invoke([HumanMessage(content=prompt)])
     try:
         plan_data = json.loads(resp.content.strip())
         tools = plan_data.get("tools") or ["search_cases", "search_taxlaw_prec", "search_taxtr", "search_itcl_law"]
@@ -219,7 +225,7 @@ def synthesizer_node(state: MultiAgentState) -> dict:
         "- 판결문 문체 금지 → 실무자 보고서 톤"
     )
 
-    result = _llm.invoke([HumanMessage(content=prompt)])
+    result = _get_llm().invoke([HumanMessage(content=prompt)])
     return {"final_report": result.content}
 
 

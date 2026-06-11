@@ -29,7 +29,14 @@ from export.export_chain import ExportCChain
 from export.models_export import ExportCInput
 from utils.cache import load_cache
 
-_llm = get_llm(model=DEFAULT_MODEL, temperature=0)
+_llm = None
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = get_llm(model=DEFAULT_MODEL, temperature=0)
+    return _llm
+
 _MAX_RETRIES = 1
 
 
@@ -81,7 +88,7 @@ def planner_node(state: InsightState) -> InsightState:
         "- statute_names: 법령의 공식 명칭만 (예: '국세기본법', '법인세법')\n"
         "- 법령 언급이 없으면 statute_names는 빈 배열"
     )
-    resp = _llm.invoke([HumanMessage(content=prompt)])
+    resp = _get_llm().invoke([HumanMessage(content=prompt)])
     try:
         plan = json.loads(resp.content.strip())
     except Exception:
@@ -228,7 +235,7 @@ def reporter_node(state: InsightState) -> InsightState:
         "- 각 bullet은 근거 데이터가 없으면 작성하지 말 것"
     )
 
-    result = _llm.invoke([HumanMessage(content=prompt)])
+    result = _get_llm().invoke([HumanMessage(content=prompt)])
     return {**state, "final_report": result.content}
 
 
