@@ -3,8 +3,8 @@
 ## 프로젝트 정체성
 
 **프로젝트명**: Lapis Nexus  
-**목적**: 한국 세법 판결문 AI 분석 시스템. 판결문에서 법령 인용을 추출하고, 역사적 버전의 조문을 조회하며, 쟁점-논증 구조를 그래프로 표현.  
-**사용자**: 윤승미 — 국세청 7년 경력, 국제조세(이전가격, GLOBE) 전문, Neo4j/Python/LangChain 능숙.
+**목적**: 한국 세법 판결문 AI 분석 시스템. 세법 조문 + 법원 판례 + 조세심판 재결례를 벡터 검색으로 연결하고, LangGraph 멀티 에이전트로 실무 보고서 생성.  
+**사용자**: 세법 전문가 — 국세청 경력, 국제조세(이전가격, GLOBE) 전문, Neo4j/Python/LangChain 능숙.
 
 ---
 
@@ -21,13 +21,29 @@
 
 | 구성요소 | 내용 |
 |---------|------|
-| DB | Neo4j AuraDB (cloud) — `NEO4J_URI` env에서 로드 |
+| DB (그래프) | Neo4j AuraDB (cloud) — `NEO4J_URI` env에서 로드 |
+| DB (벡터) | ChromaDB PersistentClient — `vector_db/chroma/` (로컬 전용, Railway 없음) |
 | LLM | GPT-4.1 (`gpt-4.1`) via LangChain ChatOpenAI |
 | 법령 API | 법령정보센터 DRF API, OC=`seungmi0723`, HTTP (not HTTPS) |
-| 백엔드 | FastAPI (`backend/main.py`) |
-| 프론트 | Next.js (`law-frontend/`) |
+| 백엔드 | FastAPI (`backend/main.py`) — Railway 배포 |
+| 프론트 | Next.js (`law-frontend/`) — Vercel 배포 |
+| 에이전트 프레임워크 | LangGraph StateGraph |
 | 판결문 파이프라인 | `bravo/` — 10단계 구조화 파이프라인 |
 | Python 환경 | pypoetry venv `C:\Users\LG\AppData\Local\pypoetry\Cache\virtualenvs\langchain-kr-0bF25OO7-py3.11\Scripts\python.exe` |
+
+---
+
+## 배포 현황
+
+| 서비스 | 플랫폼 | URL | 상태 |
+|-------|--------|-----|------|
+| Backend API | Railway | `https://law-backend-production-5249.up.railway.app` | Chroma 없음 → Chroma 엔드포인트는 500 |
+| Frontend | Vercel | — | 정상 |
+
+**Railway 구성**:
+- Root directory: `backend/`
+- `backend/railway.toml`에 startCommand, healthcheck 명시
+- `.env` 위치: `29_FINAL/.env` (backend/.env 없음 — main.py가 `../env` 로드)
 
 ---
 
@@ -35,50 +51,92 @@
 
 ```
 29_FINAL/
-├── app.py                    # FastAPI 앱 진입점 (판결문 업로드·파이프라인 API)
-├── backend/
-│   ├── main.py               # 백엔드 FastAPI (Clerk 인증, 라우터 등록)
-│   ├── bravo/                # 판결문 10단계 분석 파이프라인
-│   │   ├── stage10_citation.py  # 법령 인용 추출 + 버전 매칭
-│   │   └── full_pipeline.py
-│   ├── utils/
-│   │   └── statute_version.py   # 법령 버전 조회 (핵심 유틸)
-│   └── db/
-│       ├── graph_ingest.py
-│       └── itcl_search.py
-├── ITCL/                     # 국제조세조정법 처리 파이프라인
-│   ├── convert_drf_law_to_unified.py  # DRF JSON → unified schema
-│   ├── pipeline.py           # 5단계 파이프라인 (unify→norm→semantic→reasoning→ingest)
-│   ├── ingest_norm_itcl.py   # Neo4j norm 인제스트
-│   ├── ingest_logic_itcl.py  # Neo4j logic 인제스트
-│   ├── chain.py              # LLM 체인들
-│   ├── models.py             # Pydantic 모델 + 스키마
-│   └── domain_assign.py      # 챕터별 도메인 태그 맵
-├── ITCL_integrated/          # 법+령+규칙 통합 분석
-│   ├── pipeline.py           # 통합 파이프라인
-│   ├── ingest.py             # IntegratedSnapshot 인제스트
-│   └── models.py
+├── CLAUDE.md                 # 이 파일
+├── AGENTS.md                 # 에이전트 아키텍처 상세 문서
+├── .env                      # 환경변수 (git 제외)
+├── backend/                  # Railway 배포 루트
+│   ├── main.py               # FastAPI 진입점 (Clerk 인증, 라우터 등록, /health)
+│   ├── railway.toml          # Railway 배포 설정
+│   ├── requirements.txt      # Python 의존성
+│   ├── agents/               # LangGraph 에이전트
+│   │   ├── insight_agent.py  # InsightAgent (Plan→Execute→Reflect→Report)
+│   │   ├── multi_agent.py    # SupervisorAgent (4개 소스 멀티 에이전트)
+│   │   ├── taxlaw_prec_agent.py  # TaxlawPrecAgent (NTS 법원 판례 32,628건)
+│   │   └── taxtr_agent.py    # TaxtrAgent (조세심판 재결례 2,463건)
+│   ├── routers/              # FastAPI 라우터
+│   │   ├── agent.py          # /api/agent/insight, /api/agent/multi
+│   │   ├── taxlaw_prec.py    # /api/prec/*
+│   │   ├── taxtr.py          # /api/taxtr/*
+│   │   ├── cases.py          # /api/cases/* (Neo4j 판례)
+│   │   └── law.py            # /api/law/* (법령 조문)
+│   ├── db/
+│   │   ├── graph_ingest.py   # Neo4j 인제스트
+│   │   └── itcl_search.py    # Neo4j LegalGraphSearch (InsightAgent용)
+│   └── cache/                # LLM 결과 캐시 607건 (git 제외)
+├── vector_db/chroma/         # ChromaDB 로컬 (git 제외)
+│   ├── law_articles/         # 6,687 조문 (14개 세법 법+령+규칙)
+│   ├── taxlaw_prec/          # 32,628 NTS 법원 판례
+│   └── taxtr_cases/          # 2,463 조세심판 재결례
 ├── law/                      # 법령 JSON DB (635MB, git 제외)
-│   ├── gukse_basic/{law,decree}/       # 국세기본법
-│   ├── gukse_collection/{law,decree,rule}/  # 국세징수법
-│   ├── corporate_tax/{law,decree,rule}/     # 법인세법
-│   ├── income_tax/{law,decree,rule}/        # 소득세법
-│   ├── vat/{law,decree,rule}/               # 부가가치세법
-│   ├── tax_crime/law/                       # 조세범처벌법
-│   ├── tax_crime_proc/{law,decree}/         # 조세범처벌절차법
-│   └── itcl/{law,decree,rule}/              # 국제조세조정법
-│   각 폴더: MST_*.json (개별 버전) + _version_index.json (공포번호→버전 인덱스)
-├── scripts/                  # 빌드·운영 스크립트 (루트 정리용)
-│   ├── build_law_history_db.py       # DRF API 전체 다운로드
-│   ├── build_law_index_only.py       # 인덱스 재빌드
-│   ├── build_itcl_historical_snapshots.py  # ITCL 역사 스냅샷 Neo4j 빌드
-│   ├── setup_constraints.py          # Neo4j 제약조건 설정
-│   └── ...
-├── RISK/                     # 개정 리스크 체인 (stub 수준)
-├── bravo/                    # 판결문 파이프라인 (app.py용)
-├── export/                   # 보고서 생성 (A/B/C 유형)
-└── cache/                    # LLM 결과 캐시 (git 제외)
+│   ├── gukse_basic/          # 국세기본법
+│   ├── corporate_tax/        # 법인세법
+│   ├── income_tax/           # 소득세법
+│   ├── vat/                  # 부가가치세법
+│   ├── gukse_collection/     # 국세징수법
+│   ├── tax_crime/            # 조세범처벌법
+│   ├── tax_crime_proc/       # 조세범처벌절차법
+│   ├── itcl/                 # 국제조세조정법
+│   ├── inheritance_tax/      # 상속세 및 증여세법
+│   ├── customs/              # 관세법
+│   ├── capital_market/       # 자본시장법
+│   ├── individual_consumption/ # 개별소비세법
+│   ├── comprehensive_realty/ # 종합부동산세법
+│   └── joseteukrejehan/      # 조세특례제한법
+├── cases/                    # 원본 판례 데이터
+│   ├── court_api/            # 법원 API 696건
+│   ├── taxtr/                # 조세심판 재결례 2,463건
+│   └── inquiry/              # 질의회신 (미수집)
+├── scripts/                  # 빌드·운영 스크립트
+│   ├── build_law_vector_db.py      # Chroma law_articles 빌드
+│   ├── build_law_history_db.py     # DRF API 전체 다운로드
+│   └── run_court_pipeline_parallel.py  # bravo 파이프라인 병렬 실행
+├── ITCL/                     # 국제조세조정법 처리 파이프라인
+├── ITCL_integrated/          # 법+령+규칙 통합 분석
+└── law-frontend/             # Next.js 프론트엔드 (Vercel)
+    └── app/agent/            # 에이전트 전용 UI (4개 에이전트)
 ```
+
+---
+
+## Chroma DB 현황 (로컬, `vector_db/chroma`)
+
+| 컬렉션 | 건수 | 소스 | 빌드 스크립트 |
+|--------|------|------|--------------|
+| `law_articles` | 6,687 조문 | `law/` 폴더 14개 세법 | `scripts/build_law_vector_db.py` |
+| `taxlaw_prec` | 32,628건 | NTS taxlaw.nts.go.kr | (별도 스크래핑) |
+| `taxtr_cases` | 2,463건 | 조세심판원 | (별도 스크래핑) |
+
+> ⚠️ Chroma DB는 **로컬 전용**. Railway 배포 환경에는 없음.  
+> Railway에서 Chroma 호출 시 500 반환.
+
+---
+
+## 에이전트 구성 (2026-06-11 기준)
+
+상세 내용은 `AGENTS.md` 참조.
+
+| 에이전트 | 파일 | 엔드포인트 | 데이터 소스 |
+|---------|------|-----------|------------|
+| SupervisorAgent (MULTI) | `agents/multi_agent.py` | `POST /api/agent/multi` | Neo4j + Chroma 3종 |
+| InsightAgent (INSIGHT) | `agents/insight_agent.py` | `POST /api/agent/insight` | Neo4j LegalGraphSearch |
+| TaxlawPrecAgent | `agents/taxlaw_prec_agent.py` | `POST /api/prec/ask` | Chroma `taxlaw_prec` |
+| TaxtrAgent | `agents/taxtr_agent.py` | `POST /api/taxtr/ask` | Chroma `taxtr_cases` |
+
+**MULTI 에이전트 검색 소스 (4개)**:
+1. `search_cases` — Neo4j 벡터 검색 (국제조세 판례)
+2. `search_law` — Chroma `law_articles` (14개 세법 조문 6,687건) ← 구 `search_itcl_law` (Neo4j ITCLSearch) 교체
+3. `search_taxlaw_prec` — Chroma `taxlaw_prec` (NTS 법원 판례 32,628건)
+4. `search_taxtr` — Chroma `taxtr_cases` (조세심판 재결례 2,463건)
 
 ---
 
@@ -100,87 +158,48 @@ Law (scope, id)
 ```
 
 **⚠️ 중요**: Chapter/Article 등 중간 노드에 `law_id` 포함. 다중 법령 공존 시 충돌 방지.  
-`scope` = "LAW" | "DECREE" | "RULE"  
-`law_id` = 법령 고유 ID (법령MST 또는 공포번호 기반)
+`scope` = "LAW" | "DECREE" | "RULE"
 
-### Integrated 레이어 (통합 의미 분석)
+### Integrated 레이어 (통합 의미 분석 — ITCL 65개 버전)
 
 ```
 IntegratedSnapshot (scope="INTEGRATED", set_key)
-  set_key 형식: "LAW_{date}_{no}__DECREE_{date}_{no}__RULE_{date}_{no}"
 └─ HAS_INTEGRATED_CHAPTER
-   └─ IntegratedChapter (scope, set_key, chapter_id)
+   └─ IntegratedChapter
       ├─ DERIVED_FROM → Chapter (LAW/DECREE/RULE)
       ├─ HAS_INTEGRATED_SEMANTIC → SemanticIssue
       └─ HAS_INTEGRATED_REASONING → ReasoningIssue
-           ├─ ALIGNED_WITH → SemanticIssue
-           └─ HAS_STEP → ReasoningStep
-                └─ BASED_ON → Article | LawTarget
+           └─ HAS_STEP → ReasoningStep → BASED_ON → Article
 ```
 
 ---
 
-## 법령 버전 조회 흐름 (`statute_version.py`)
+## 로컬 개발 환경
 
-판결문 citation → `resolve_citation_version()` → 3단계 조회:
+```powershell
+# 백엔드 실행
+$python = "C:\Users\LG\AppData\Local\pypoetry\Cache\virtualenvs\langchain-kr-0bF25OO7-py3.11\Scripts\python.exe"
+Set-Location "C:\Users\LG\Documents\langchain-kr\29_FINAL\backend"
+& $python -m uvicorn main:app --host 127.0.0.1 --port 8000
 
-1. **ITCL 계열** → Neo4j `IntegratedSnapshot`에서 set_key 매칭
-2. **7개 세법** → 로컬 `law/{slug}/{kind}/_version_index.json` 에서 공포번호 매칭
-3. **나머지** → GPT-4.1 지식 기반 (uncertainty 플래그)
+# 프론트엔드 실행 (별도 터미널)
+Set-Location "C:\Users\LG\Documents\langchain-kr\29_FINAL\law-frontend"
+npm run dev
+```
 
-인덱스 구조: `공포번호(lstrip "0") → {version_key, pdate, pno, eff_date, law_name, mst, file}`
-
----
-
-## 법령 slug 매핑
-
-| 법령 | slug | 보유 종류 |
-|------|------|---------|
-| 국세기본법 | gukse_basic | law, decree |
-| 국세징수법 | gukse_collection | law, decree, rule |
-| 법인세법 | corporate_tax | law, decree, rule |
-| 소득세법 | income_tax | law, decree, rule |
-| 부가가치세법 | vat | law, decree, rule |
-| 조세범처벌법 | tax_crime | law (34버전, 시행령 없음) |
-| 조세범처벌절차법 | tax_crime_proc | law, decree |
-| 국제조세조정법 | itcl | law, decree, rule |
+**주의**: `python-jose`가 poetry venv에 없을 수 있음 → `pip install "python-jose[cryptography]"` 수동 설치 필요.
 
 ---
 
-## 현재 완료된 작업
+## 법령 벡터 DB 빌드
 
-- [x] 7개 세법 역사적 버전 전체 다운로드 (`law/` 폴더, 1,786개 JSON)
-- [x] `_version_index.json` 빌드 완료 (1,781개 항목)
-- [x] `statute_version.py` 3단계 조회 연동
-- [x] ITCL 역사적 IntegratedSnapshot 65개 Neo4j 빌드 (2010~2025)
-- [x] 판결문 파이프라인 bravo/ 10단계 구현
-- [x] 법령 개정 리스크 체인 stub (RISK/chain.py)
-
----
-
-## 진행 중 / 다음 할 일
-
-### 🔴 최우선: 7개 세법 Neo4j 인제스트 (Law_7 파이프라인)
-
-**설계 결정 (확정)**:
-- Phase 1: 현행 버전만 Norm 인제스트 (구조 + LLM NormUnit/CrossRef)
-- Phase 2: 법+령+규칙 통합 Integrated 인제스트 (SemanticIssue/ReasoningIssue)
-- Phase 3: 법령 간 CrossRef 해소 (EXTERNAL → 실제 Article 노드 연결)
-- **DB 초기화 후 새 스키마** (Chapter 등 키에 `law_id` 추가)
-
-**처리 순서**: 국세기본법 → 법인세법 → 소득세법 → 부가가치세법 → 국세징수법 → 조세범처벌법/절차법
-
-**새로 만들 폴더**: `LAW_7/`  
-파이프라인: ITCL/ + ITCL_integrated/ 코드 85% 재사용, 도메인 맵만 법별로 신규 작성
-
-### 🟡 에이전트 개발 (인제스트 완료 후)
-
-1. **법령 개정 리스크 알림** — `RISK/chain.py` 확장, 판례 재평가
-2. **의뢰인 사건 전략** — 유사 판례 매칭 → 전략 권고 (경정청구/심판/소송)
-3. **판례 트렌드** — 연도별·법원별 승소율 집계
-4. **반론 초안** — 과세처분 이유서 입력 → 판례 기반 반론 생성
-5. **ITCL 전문** — `ITCL/` + `ITCL_integrated/` 활용
-6. **판례 비교** — 두 판결 issue_logic_chains 구조 비교
+```powershell
+$python = "C:\Users\LG\AppData\Local\pypoetry\Cache\virtualenvs\langchain-kr-0bF25OO7-py3.11\Scripts\python.exe"
+# 전체 재빌드
+& $python scripts/build_law_vector_db.py
+# 초기화 후 재빌드
+& $python scripts/build_law_vector_db.py --reset
+```
 
 ---
 
@@ -189,40 +208,33 @@ IntegratedSnapshot (scope="INTEGRATED", set_key)
 ```python
 # MST 목록 (HTML 파싱)
 GET http://www.law.go.kr/DRF/lawSearch.do
-  ?OC=seungmi0723&target=lsHistory&type=HTML&query={법령명}&display=100&page=1
+  ?OC={YOUR_OC}&target=lsHistory&type=HTML&query={법령명}&display=100&page=1
 
 # 개별 버전 JSON
 GET http://www.law.go.kr/DRF/lawService.do
-  ?OC=seungmi0723&target=law&MST={mst}&type=JSON
+  ?OC={YOUR_OC}&target=law&MST={mst}&type=JSON
 ```
 
 **주의**: `requests.Session()` 재사용 시 ConnectionResetError 발생. 요청마다 새 Session 생성 필수.
 
 ---
 
-## 자주 쓰는 명령
+## 환경변수 (`.env` — `29_FINAL/.env`)
 
-```bash
-# 법령 다운로드
-python scripts/build_law_history_db.py --download --law 국세기본법
-
-# 인덱스 재빌드
-python scripts/build_law_index_only.py --law 국세기본법
-
-# Neo4j 제약조건 설정
-python scripts/setup_constraints.py
-
-# ITCL 스냅샷 빌드
-python scripts/build_itcl_historical_snapshots.py
+```
+OPENAI_API_KEY=...
+NEO4J_URI=neo4j+s://3dfa7316.databases.neo4j.io
+NEO4J_USERNAME=...
+NEO4J_PASSWORD=...
+CLERK_ISSUER=https://...clerk.accounts.dev
 ```
 
 ---
 
-## 환경변수 (.env)
+## 다음 세션 시작 항목
 
-```
-NEO4J_URI=neo4j+s://3dfa7316.databases.neo4j.io
-NEO4J_PASSWORD=...
-OPENAI_API_KEY=...
-CLERK_ISSUER=...
-```
+1. **Railway 502 해소 확인** — 최근 push(chromadb==0.6.3 + railway.toml + CLERK graceful) 후 `/health` 응답 확인
+2. **질의회신 벡터 DB** — `cases/inquiry/` 다운로드 재실행 후 Chroma 빌드
+3. **INSIGHT 에이전트 법령 소스** — `insight_agent.py` executor에서 ITCLSearch 법령 조회 부분 → Chroma `law_articles`로 교체 고려
+4. **bravo 43건 미처리** — `scripts/run_court_pipeline_parallel.py --workers 4` 재실행
+5. **Neo4j 7개 세법 인제스트 (LAW_7)** — 장기 과제
