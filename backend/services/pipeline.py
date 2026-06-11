@@ -14,8 +14,8 @@ from fastapi import Depends, HTTPException, status, Request
 
 import os
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 # Clerk userId를 FastAPI에서 받기
@@ -32,7 +32,7 @@ def get_current_user_id(request: Request) -> str:
 #구독자 체크 함수
 def assert_user_is_subscriber(user_id: str) -> None:
     res = (
-        supabase
+        _get_supabase()
         .from_("user_access_levels")
         .select("access_level, subscription_end_at")
         .eq("user_id", user_id)
@@ -79,14 +79,21 @@ def run_case_pipeline(case_id: str, pdf_path: Path, user_id: str):
 
 
 #1️⃣ 사용량 기록 함수 (usage 1건 저장)
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY,
-)
+_supabase_client = None
+
+def _get_supabase():
+    global _supabase_client
+    if _supabase_client is None:
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured")
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return _supabase_client
+
+supabase = None  # backward-compat: use _get_supabase() internally
 
 
 def record_case_analysis_usage(user_id: str, case_id: str) -> None:
-    supabase.from_("case_analysis_usage").insert({
+    _get_supabase().from_("case_analysis_usage").insert({
         "user_id": user_id,
         "case_id": case_id,
     }).execute()
@@ -100,7 +107,7 @@ def get_monthly_case_usage(user_id: str) -> int:
     )
 
     res = (
-        supabase
+        _get_supabase()
         .from_("case_analysis_usage")
         .select("id", count="exact")
         .eq("user_id", user_id)
@@ -132,7 +139,7 @@ def get_monthly_case_usage_detail(user_id: str):
     )
 
     res = (
-        supabase
+        _get_supabase()
         .from_("case_analysis_usage")
         .select("case_id, created_at")
         .eq("user_id", user_id)
