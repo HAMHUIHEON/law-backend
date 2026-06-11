@@ -27,6 +27,18 @@ law/**/MST_*.json
 law/**/_mst_list.json
 lsHistory_test.html
 
+# 로컬 전용 데이터 (재생성 가능)
+vector_db/
+chroma_db/
+cases/
+taxlaw/
+logs/
+
+# 서버 로그 임시 파일
+*.log
+backend_stderr.log
+backend_stdout.log
+
 # 기타
 *.db
 *.sqlite3
