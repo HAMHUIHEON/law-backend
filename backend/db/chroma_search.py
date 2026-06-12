@@ -22,13 +22,22 @@ def _get_client():
 
 
 def _get_ef():
+    """openai v1.x 호환 커스텀 임베딩 함수. chromadb 내장 OpenAIEmbeddingFunction은 v0.x API 사용으로 실패."""
     global _ef
     if _ef is None:
-        from chromadb.utils import embedding_functions
-        _ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.environ.get("OPENAI_API_KEY", ""),
-            model_name="text-embedding-3-small",
-        )
+        from chromadb import EmbeddingFunction
+        from openai import OpenAI
+
+        _api_key = os.environ.get("OPENAI_API_KEY", "")
+        _model = "text-embedding-3-small"
+
+        class _EF(EmbeddingFunction):
+            def __call__(self, input):  # noqa: A002
+                client = OpenAI(api_key=_api_key)
+                resp = client.embeddings.create(input=input, model=_model)
+                return [item.embedding for item in resp.data]
+
+        _ef = _EF()
     return _ef
 
 

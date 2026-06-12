@@ -111,11 +111,16 @@ def debug_chroma():
         result["error"] = str(e)
     try:
         import chromadb
-        from chromadb.utils import embedding_functions
-        ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.environ.get("OPENAI_API_KEY", ""),
-            model_name="text-embedding-3-small",
-        )
+        from chromadb import EmbeddingFunction
+        from openai import OpenAI as _OAI
+        _oai_key = os.environ.get("OPENAI_API_KEY", "")
+
+        class _EF(EmbeddingFunction):
+            def __call__(self, input):  # noqa: A002
+                resp = _OAI(api_key=_oai_key).embeddings.create(input=input, model="text-embedding-3-small")
+                return [i.embedding for i in resp.data]
+
+        ef = _EF()
         client = chromadb.PersistentClient(path=chroma_dir)
         for name in ["taxlaw_prec", "taxtr_cases", "law_articles"]:
             try:
