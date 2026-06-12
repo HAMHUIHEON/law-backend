@@ -5,7 +5,10 @@
 import os
 from pathlib import Path
 
-_CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
+_CHROMA_DIR = Path(
+    os.environ.get("CHROMA_DIR")
+    or str(Path(__file__).parent.parent.parent / "vector_db" / "chroma")
+)
 _client = None
 _ef = None
 
