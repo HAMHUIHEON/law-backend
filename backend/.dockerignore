@@ -1,0 +1,30 @@
+# Runtime / data directories (large, not needed for API)
+vector_db/
+law/
+cases/
+cache/
+uploads/
+output/
+logs/
+
+# Python build artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Env / secrets
+.env
+.env.*
+
+# Dev tools
+.DS_Store
+*.log
+
+# IMPORTANT: utils/cache/ is SOURCE CODE (cache abstraction layer), not data
+# Must NOT be excluded even though its directory name contains "cache"
+!utils/
+!utils/cache/
+!utils/cache/**

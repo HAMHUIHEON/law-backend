@@ -29,7 +29,11 @@ from bravo.models_bravo import IssueLogic
 from db.graph_search import LegalGraphSearch
 from export.export_chain import ExportCChain
 from export.models_export import ExportCInput
-from utils.cache import load_cache
+try:
+    from utils.cache import load_cache
+except ImportError:
+    def load_cache(case_id, filename):  # noqa: E302
+        return None
 
 _CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
 _OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
