@@ -37,7 +37,7 @@
 
 | 서비스 | 플랫폼 | URL | 상태 |
 |-------|--------|-----|------|
-| Backend API | Railway | `https://law-backend-production-5249.up.railway.app` | Chroma 없음 → Chroma 엔드포인트는 500 |
+| Backend API | Railway | `https://law-backend-production-5249.up.railway.app` | 정상 — Volume Chroma 포함 9종 에이전트 전부 동작 |
 | Frontend | Vercel | — | 정상 |
 
 **Railway 구성**:
@@ -244,6 +244,8 @@ CLERK_ISSUER=https://...clerk.accounts.dev
 | 5개 에이전트 로컬 테스트 | ✅ | 전부 정상 (아래 테스트 결과 참조) |
 | 프론트엔드 UI 추가 | ✅ | 9종 에이전트 — Vercel `a3c0c60` 배포 |
 | chroma_search 임베딩 버그 수정 | ✅ | text-embedding-3-small EF 명시 (`e4e571ef`) |
+| Railway Chroma Volume 배포 | ✅ | 265MB zip → Volume /app/chroma (taxlaw_prec 32,628건 등) |
+| Railway Chroma 검색 동작 | ✅ | openai v1.x 호환 커스텀 EF 사용 (`475e0e2d`) |
 
 ## Chroma 검색 중요 주의사항
 
@@ -252,8 +254,7 @@ Chroma 기본(ONNX 384-dim) ≠ 빌드 시 사용한 OpenAI text-embedding-3-sma
 
 ## 다음 세션 시작 항목
 
-1. **Railway Chroma 없음 해결** — 프로덕션에서 Strategy/Rebuttal/Trend/Risk 에이전트가 500 반환. 옵션: Chroma Cloud, Pinecone, Supabase pgvector 마이그레이션
-2. **`mcp_server.py` 업데이트** — 신규 에이전트 5종 툴 추가
+1. **`mcp_server.py` 업데이트** — 신규 에이전트 5종 툴 추가
 3. **질의회신 벡터 DB** — 다운로드 재실행 후 Chroma 빌드
 4. **bravo 43건 미처리** — `scripts/run_court_pipeline_parallel.py --workers 4` 재실행
 5. **Neo4j 7개 세법 인제스트 (LAW_7)** — 장기 과제
