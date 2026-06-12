@@ -121,9 +121,12 @@ def debug_chroma():
             try:
                 col = client.get_collection(name, embedding_function=ef)
                 cnt = col.count()
-                result["collections"].append({"name": name, "count": cnt})
+                # 실제 쿼리 테스트
+                qr = col.query(query_texts=["부당행위계산"], n_results=2, include=["metadatas"])
+                hits = len(qr["metadatas"][0]) if qr.get("metadatas") else 0
+                result["collections"].append({"name": name, "count": cnt, "query_hits": hits})
             except Exception as ce:
-                result["collections"].append({"name": name, "error": str(ce)[:120]})
+                result["collections"].append({"name": name, "error": str(ce)[:200]})
     except Exception as e:
         result["collections_error"] = str(e)
     return result
