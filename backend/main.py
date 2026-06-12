@@ -89,3 +89,30 @@ app.include_router(itcl.router, prefix="/api/itcl", tags=["itcl"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/debug/chroma")
+def debug_chroma():
+    """임시 디버그: Chroma 디렉토리 구조와 컬렉션 목록 반환."""
+    import os
+    chroma_dir = os.environ.get("CHROMA_DIR", "/app/chroma")
+    result = {"chroma_dir": chroma_dir, "files": [], "collections": [], "error": None}
+    try:
+        for root, dirs, files in os.walk(chroma_dir):
+            for f in files:
+                rel = os.path.relpath(os.path.join(root, f), chroma_dir)
+                result["files"].append(rel)
+                if len(result["files"]) > 30:
+                    result["files"].append("... (truncated)")
+                    break
+            if len(result["files"]) > 30:
+                break
+    except Exception as e:
+        result["error"] = str(e)
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path=chroma_dir)
+        result["collections"] = [c.name for c in client.list_collections()]
+    except Exception as e:
+        result["collections_error"] = str(e)
+    return result
