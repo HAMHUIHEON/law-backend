@@ -111,8 +111,19 @@ def debug_chroma():
         result["error"] = str(e)
     try:
         import chromadb
+        from chromadb.utils import embedding_functions
+        ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+            model_name="text-embedding-3-small",
+        )
         client = chromadb.PersistentClient(path=chroma_dir)
-        result["collections"] = [c.name for c in client.list_collections()]
+        for name in ["taxlaw_prec", "taxtr_cases", "law_articles"]:
+            try:
+                col = client.get_collection(name, embedding_function=ef)
+                cnt = col.count()
+                result["collections"].append({"name": name, "count": cnt})
+            except Exception as ce:
+                result["collections"].append({"name": name, "error": str(ce)[:120]})
     except Exception as e:
         result["collections_error"] = str(e)
     return result
