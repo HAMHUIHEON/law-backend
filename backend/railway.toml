@@ -2,7 +2,7 @@
   builder = "nixpacks"
 
 [deploy]
-  startCommand = "python init_chroma.py && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+  startCommand = ". /app/.venv/bin/activate 2>/dev/null || true; python init_chroma.py && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
   restartPolicyType = "on_failure"
   restartPolicyMaxRetries = 3
 
