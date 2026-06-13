@@ -1,0 +1,12 @@
+[build]
+  builder = "dockerfile"
+  dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+  startCommand = "python start.py"
+  restartPolicyType = "on_failure"
+  restartPolicyMaxRetries = 3
+
+[healthcheck]
+  path = "/health"
+  timeout = 300
