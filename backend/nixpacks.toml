@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "curl", "unzip"]
-
-[start]
-cmd = "python start.py"
-
-[variables]
-NIXPACKS_PYTHON_VERSION = "3.11"
