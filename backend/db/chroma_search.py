@@ -102,17 +102,19 @@ def search_taxtr_cases(
 
 
 def search_law_articles(query: str, n: int = 6) -> list:
-    """세법 조문(6,687건) 벡터 검색."""
+    """세법 조문(6,687건) 벡터 검색. document 텍스트 포함."""
     try:
         col = _get_client().get_collection("law_articles", embedding_function=_get_ef())
         results = col.query(
             query_texts=[query],
             n_results=n,
-            include=["metadatas", "distances"],
+            include=["metadatas", "distances", "documents"],
         )
         docs = []
-        for meta, dist in zip(results["metadatas"][0], results["distances"][0]):
-            docs.append({**meta, "similarity": round(1 - dist, 4)})
+        documents = results.get("documents", [[]])[0] or []
+        for i, (meta, dist) in enumerate(zip(results["metadatas"][0], results["distances"][0])):
+            doc_text = documents[i] if i < len(documents) else ""
+            docs.append({**meta, "document": doc_text or "", "similarity": round(1 - dist, 4)})
         return docs
     except Exception:
         return []
