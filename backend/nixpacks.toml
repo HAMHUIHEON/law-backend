@@ -2,7 +2,7 @@
 nixPkgs = ["python311", "python311Packages.pip", "curl", "unzip"]
 
 [start]
-cmd = "python init_chroma.py && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "python start.py"
 
 [variables]
 NIXPACKS_PYTHON_VERSION = "3.11"
