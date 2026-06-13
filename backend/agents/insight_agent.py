@@ -18,7 +18,6 @@
 
 import json
 import os
-from pathlib import Path
 from typing import List, Optional, TypedDict
 
 from langchain_core.messages import HumanMessage
@@ -35,37 +34,10 @@ except ImportError:
     def load_cache(case_id, filename):  # noqa: E302
         return None
 
-_CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
-_OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
-
-
 def _chroma_law_search(query: str, n: int = 6) -> list:
-    """Chroma law_articles에서 관련 조문 검색. Railway에 DB 없으면 빈 리스트 반환."""
-    try:
-        import chromadb
-        from chromadb.utils import embedding_functions
-        client = chromadb.PersistentClient(path=str(_CHROMA_DIR))
-        ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=_OPENAI_KEY or os.getenv("OPENAI_API_KEY", ""),
-            model_name="text-embedding-3-small",
-        )
-        col = client.get_collection("law_articles", embedding_function=ef)
-        res = col.query(query_texts=[query], n_results=min(n, col.count()))
-        docs = res["documents"][0] if res["documents"] else []
-        metas = res["metadatas"][0] if res["metadatas"] else []
-        return [
-            {
-                "law_name": m.get("law_name", ""),
-                "scope": m.get("scope", ""),
-                "article_no": m.get("article_no", ""),
-                "title": m.get("title", ""),
-                "domain": m.get("domain", ""),
-                "document": d,
-            }
-            for d, m in zip(docs, metas)
-        ]
-    except Exception:
-        return []
+    """Chroma law_articles에서 관련 조문 검색. chroma_search.py의 공유 클라이언트 사용."""
+    from db.chroma_search import search_law_articles
+    return search_law_articles(query, n=n)
 
 _llm = None
 

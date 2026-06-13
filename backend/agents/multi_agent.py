@@ -145,12 +145,17 @@ def _route_supervisor(state: MultiAgentState) -> str:
 # ── 2. Case Search (Neo4j) ─────────────────────────────────────────────────────
 
 def case_search_node(state: MultiAgentState) -> dict:
-    s = LegalGraphSearch()
     try:
-        results = s.search_similar_issues(state["query"], top_k=6)
-        patterns = s.analyze_winning_patterns(state["query"], top_k=10)
-    finally:
-        s.close()
+        s = LegalGraphSearch()
+        try:
+            results = s.search_similar_issues(state["query"], top_k=6)
+            patterns = s.analyze_winning_patterns(state["query"], top_k=10)
+        finally:
+            s.close()
+    except Exception as e:
+        print(f"[case_search_node] Neo4j 검색 실패: {e}")
+        results = []
+        patterns = {}
     return {
         "case_results": results,
         "pattern_results": patterns,
