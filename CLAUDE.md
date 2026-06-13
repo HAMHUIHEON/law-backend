@@ -26,7 +26,7 @@
 | LLM | GPT-4.1 (`gpt-4.1`) via LangChain ChatOpenAI |
 | 법령 API | 법령정보센터 DRF API, OC=`seungmi0723`, HTTP (not HTTPS) |
 | 백엔드 | FastAPI (`backend/main.py`) — Railway 배포 |
-| 프론트 | Next.js (`law-frontend/`) — Vercel 배포 |
+| 프론트 | Next.js (`law-frontend/`) — Vercel 배포 (전체화면 검색 UI, 9종 에이전트) |
 | 에이전트 프레임워크 | LangGraph StateGraph |
 | 판결문 파이프라인 | `bravo/` — 10단계 구조화 파이프라인 |
 | Python 환경 | pypoetry venv `C:\Users\LG\AppData\Local\pypoetry\Cache\virtualenvs\langchain-kr-0bF25OO7-py3.11\Scripts\python.exe` |
@@ -38,7 +38,7 @@
 | 서비스 | 플랫폼 | URL | 상태 |
 |-------|--------|-----|------|
 | Backend API | Railway | `https://law-backend-production-5249.up.railway.app` | 정상 — Volume Chroma 포함 9종 에이전트 전부 동작 |
-| Frontend | Vercel | — | 정상 |
+| Frontend | Vercel | — | 정상 — 전체화면 검색 UI (`59490b5`) |
 
 **Railway 구성**:
 - Root directory: `backend/`
@@ -103,7 +103,7 @@
 ├── ITCL/                     # 국제조세조정법 처리 파이프라인
 ├── ITCL_integrated/          # 법+령+규칙 통합 분석
 └── law-frontend/             # Next.js 프론트엔드 (Vercel)
-    └── app/agent/            # 에이전트 전용 UI (4개 에이전트)
+    └── app/agent/            # 에이전트 전용 UI (9개 에이전트, 전체화면 검색 스타일)
 ```
 
 ---
@@ -121,7 +121,7 @@
 
 ---
 
-## 에이전트 구성 (2026-06-12 기준)
+## 에이전트 구성 (2026-06-13 기준)
 
 상세 내용은 `AGENTS.md` 참조.
 
@@ -137,11 +137,12 @@
 | ITCLAgent | `agents/itcl_agent.py` | `POST /api/itcl/ask` | Chroma 2종 + Neo4j ITCLSearch |
 | RiskAgent | `agents/risk_agent.py` | `POST /api/strategy/risk` | Chroma 3종 |
 
-**MULTI 에이전트 검색 소스 (4개)**:
+**MULTI 에이전트 검색 소스 (5개)**:
 1. `search_cases` — Neo4j 벡터 검색 (국제조세 판례)
-2. `search_law` — Chroma `law_articles` (14개 세법 조문 6,687건) ← 구 `search_itcl_law` (Neo4j ITCLSearch) 교체
+2. `search_law` — Chroma `law_articles` (14개 세법 조문 6,687건)
 3. `search_taxlaw_prec` — Chroma `taxlaw_prec` (NTS 법원 판례 32,628건)
 4. `search_taxtr` — Chroma `taxtr_cases` (조세심판 재결례 2,463건)
+5. `search_issue_cache` — `issue_index/issue_vectors.pkl` (사전 분석 판례 쟁점 벡터, 1021건·270판례)
 
 ---
 
@@ -182,17 +183,29 @@ IntegratedSnapshot (scope="INTEGRATED", set_key)
 ## 로컬 개발 환경
 
 ```powershell
-# 백엔드 실행
-$python = "C:\Users\LG\AppData\Local\pypoetry\Cache\virtualenvs\langchain-kr-0bF25OO7-py3.11\Scripts\python.exe"
-Set-Location "C:\Users\LG\Documents\langchain-kr\29_FINAL\backend"
-& $python -m uvicorn main:app --host 127.0.0.1 --port 8000
+# poetry venv Python 경로 확인
+poetry env info --path
 
-# 프론트엔드 실행 (별도 터미널)
-Set-Location "C:\Users\LG\Documents\langchain-kr\29_FINAL\law-frontend"
+# 백엔드 실행 (29_FINAL/backend/)
+& "<poetry-venv>\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+# 프론트엔드 실행 (29_FINAL/law-frontend/, 별도 터미널)
 npm run dev
 ```
 
 **주의**: `python-jose`가 poetry venv에 없을 수 있음 → `pip install "python-jose[cryptography]"` 수동 설치 필요.
+
+## Git 작업 주의사항
+
+`29_FINAL/`은 `HAMHUIHEON/law-backend`에 연결된 **별도 git 레포**. 백엔드 커밋/push는 반드시 `29_FINAL/` 안에서 실행.  
+상위 `langchain-kr/` 폴더는 teddylee777 강의 레포 — 백엔드와 무관.
+
+```powershell
+cd 29_FINAL/
+git add backend/...
+git commit -m "..."
+git push origin main   # main 브랜치 (master도 동기 유지)
+```
 
 ---
 
@@ -236,16 +249,17 @@ CLERK_ISSUER=https://...clerk.accounts.dev
 
 ---
 
-## 완료 현황 (2026-06-12)
+## 완료 현황 (2026-06-13)
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
 | Railway 502 근본 해결 | ✅ | `agents/__init__.py` 비움 (cascade import 제거) |
-| 5개 에이전트 로컬 테스트 | ✅ | 전부 정상 (아래 테스트 결과 참조) |
-| 프론트엔드 UI 추가 | ✅ | 9종 에이전트 — Vercel `a3c0c60` 배포 |
+| 프론트엔드 UI 전체화면 재설계 | ✅ | Google 검색 스타일, 9종 칩 선택 — Vercel `59490b5` 배포 |
 | chroma_search 임베딩 버그 수정 | ✅ | text-embedding-3-small EF 명시 (`e4e571ef`) |
 | Railway Chroma Volume 배포 | ✅ | 265MB zip → Volume /app/chroma (taxlaw_prec 32,628건 등) |
 | Railway Chroma 검색 동작 | ✅ | openai v1.x 호환 커스텀 EF 사용 (`475e0e2d`) |
+| ITCL 법령 Chroma 통합 | ✅ | v2 아카이브에 이미 포함 확인. cold-start `add_itcl_to_chroma.py` 추가 |
+| MULTI 캐시 쟁점 검색 추가 | ✅ | `search_issue_cache` 5번째 도구 — issue_index 1021건 로드 (`865f5d41`) |
 
 ## Chroma 검색 중요 주의사항
 
@@ -254,7 +268,16 @@ Chroma 기본(ONNX 384-dim) ≠ 빌드 시 사용한 OpenAI text-embedding-3-sma
 
 ## 다음 세션 시작 항목
 
-1. **`mcp_server.py` 업데이트** — 신규 에이전트 5종 툴 추가
-3. **질의회신 벡터 DB** — 다운로드 재실행 후 Chroma 빌드
-4. **bravo 43건 미처리** — `scripts/run_court_pipeline_parallel.py --workers 4` 재실행
-5. **Neo4j 7개 세법 인제스트 (LAW_7)** — 장기 과제
+1. **`mcp_server.py` 업데이트** — strategy/rebuttal/trend/itcl/risk 5개 에이전트 툴 추가
+2. **질의회신 벡터 DB** — `cases/inquiry/` 다운로드 재실행 후 Chroma 빌드
+3. **bravo 43건 미처리** — `scripts/run_court_pipeline_parallel.py --workers 4` 재실행
+4. **Neo4j 7개 세법 인제스트 (LAW_7)** — 장기 과제
+
+## issue_index 구조 (캐시 쟁점 벡터 인덱스)
+
+`backend/issue_index/issue_vectors.pkl` — 12.4MB, 1021 쟁점 행, 270 판례  
+`backend/issue_index/issue_vectors_meta.json` — case_id → 파일 해시 (증분 빌드용)  
+`backend/issue_vector_index.py` — 빌드(`build_index()`) · 로드(`load_index()`) · 검색(`search()`)  
+`backend/cache/` — 원본 판례 분석 JSON (git 제외, 로컬+Railway Volume에만 존재)
+
+인덱스 재빌드: `python issue_vector_index.py` (로컬에서만, `cache/` 필요)
