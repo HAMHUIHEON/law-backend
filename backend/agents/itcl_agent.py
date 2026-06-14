@@ -18,6 +18,7 @@ from typing import Optional, TypedDict
 from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
+from agents.conversation import build_context_query, make_history_section
 
 _llm = None
 
@@ -62,6 +63,7 @@ def _get_llm():
 
 class ITCLState(TypedDict):
     query: str
+    messages: list   # 이전 대화 [{role, content}]
     transaction_type: str     # TRANSACTION_TYPE_LABELS 중 하나
     related_party_country: str  # 상대방 국가 (조세조약 확인용)
     transaction_amount_krw: int  # 거래 금액 (원화, APA 고려 기준)
@@ -82,7 +84,10 @@ def searcher_node(state: ITCLState) -> dict:
 
     # 거래 유형을 쿼리에 반영
     tx_type = state.get("transaction_type") or "기타"
-    itcl_query = f"이전가격 특수관계자 국제조세 {tx_type} {state['query']}"
+    itcl_query = build_context_query(
+        f"이전가격 특수관계자 국제조세 {tx_type} {state['query']}",
+        state.get("messages") or [],
+    )
 
     court_cases = search_taxlaw_prec(itcl_query, n=8)
     law_articles = search_law_articles(itcl_query, n=8)  # 국조법 조문 우선
@@ -142,9 +147,11 @@ def analyzer_node(state: ITCLState) -> dict:
     # 법령 시점 참고
     year_note = f"\n📅 거래 연도 [{tx_year}] 기준 국조법 조문 적용 — 현행법과 다를 수 있으니 개정 이력 확인 필요" if tx_year else ""
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         f"{ITCL_SYSTEM}\n\n"
-        "아래 정보를 바탕으로 이전가격 분석 보고서를 작성하라.\n\n"
+        "아래 정보를 바탕으로 이전가격 분석 보고서를 작성하라."
+        + hist_section + "\n\n"
         f"[질의/거래 정보]\n{state['query']}\n"
         f"[거래 유형] {tx_type}"
         + (f"\n[상대방 국가] {country}" if country else "")
@@ -234,9 +241,11 @@ class ITCLAgent:
         related_party_country: str = "",
         transaction_amount_krw: int = 0,
         transaction_year: str = "",
+        messages: list = [],
     ) -> dict:
         initial: ITCLState = {
             "query": query,
+            "messages": messages,
             "transaction_type": transaction_type,
             "related_party_country": related_party_country,
             "transaction_amount_krw": transaction_amount_krw,

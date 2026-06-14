@@ -19,23 +19,30 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import chromadb
 from chromadb.utils import embedding_functions
-from ITCL.convert_drf_law_to_unified import convert_drf_law_to_unified
 
 ROOT       = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+from ITCL.convert_drf_law_to_unified import convert_drf_law_to_unified
 LAW_DIR    = ROOT / "law"
 CHROMA_DIR = ROOT / "vector_db" / "chroma"
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 
 LAWS = [
-    {"name": "국세기본법",       "slug": "gukse_basic",      "kinds": ["law", "decree"]},
-    {"name": "법인세법",         "slug": "corporate_tax",    "kinds": ["law", "decree", "rule"]},
-    {"name": "소득세법",         "slug": "income_tax",       "kinds": ["law", "decree", "rule"]},
-    {"name": "부가가치세법",     "slug": "vat",              "kinds": ["law", "decree", "rule"]},
-    {"name": "국세징수법",       "slug": "gukse_collection", "kinds": ["law", "decree", "rule"]},
-    {"name": "조세범처벌법",     "slug": "tax_crime",        "kinds": ["law"]},
-    {"name": "조세범처벌절차법", "slug": "tax_crime_proc",   "kinds": ["law", "decree"]},
-    {"name": "국제조세조정에 관한 법률", "slug": "itcl",    "kinds": ["law", "decree", "rule"]},
+    {"name": "국세기본법",           "slug": "gukse_basic",          "kinds": ["law", "decree"]},
+    {"name": "법인세법",             "slug": "corporate_tax",        "kinds": ["law", "decree", "rule"]},
+    {"name": "소득세법",             "slug": "income_tax",           "kinds": ["law", "decree", "rule"]},
+    {"name": "부가가치세법",         "slug": "vat",                  "kinds": ["law", "decree", "rule"]},
+    {"name": "국세징수법",           "slug": "gukse_collection",     "kinds": ["law", "decree", "rule"]},
+    {"name": "조세범처벌법",         "slug": "tax_crime",            "kinds": ["law"]},
+    {"name": "조세범처벌절차법",     "slug": "tax_crime_proc",       "kinds": ["law", "decree"]},
+    {"name": "국제조세조정에 관한 법률", "slug": "itcl",             "kinds": ["law", "decree", "rule"]},
+    {"name": "상속세 및 증여세법",   "slug": "inheritance_tax",      "kinds": ["law", "decree", "rule"]},
+    {"name": "관세법",               "slug": "customs",              "kinds": ["law", "decree", "rule"]},
+    {"name": "자본시장법",           "slug": "capital_market",       "kinds": ["law", "decree", "rule"]},
+    {"name": "개별소비세법",         "slug": "individual_consumption","kinds": ["law", "decree"]},
+    {"name": "종합부동산세법",       "slug": "comprehensive_realty", "kinds": ["law", "decree"]},
+    {"name": "조세특례제한법",       "slug": "joseteukrejehan",      "kinds": ["law", "decree", "rule"]},
 ]
 
 SCOPE_LABEL = {"LAW": "법", "DECREE": "시행령", "RULE": "시행규칙"}
@@ -77,17 +84,19 @@ def _article_text(art: dict, law_name: str, scope: str) -> str:
 
 
 def _article_metadata(art: dict, law_name: str, slug: str,
-                      scope: str, version_key: str, effective_date: str) -> dict:
+                      scope: str, version_key: str, effective_date: str,
+                      abolition_date: str = "") -> dict:
     return {
-        "law_name":      law_name,
-        "slug":          slug,
-        "scope":         scope,
-        "article_id":    art.get("id", ""),
-        "article_no":    str(art.get("article_no", "")),
-        "title":         _flat_text(art.get("title") or ""),
-        "domain":        art.get("domain") or "",
-        "version_key":   version_key,
-        "effective_date": effective_date,
+        "law_name":        law_name,
+        "slug":            slug,
+        "scope":           scope,
+        "article_id":      art.get("id", ""),
+        "article_no":      str(art.get("article_no", "")),
+        "title":           _flat_text(art.get("title") or ""),
+        "domain":          art.get("domain") or "",
+        "version_key":     version_key,
+        "effective_date":  effective_date,
+        "abolition_date":  abolition_date,  # 다음 버전 시행일 = 현 버전 폐지일 (최신이면 "")
     }
 
 
@@ -130,20 +139,27 @@ def get_collection(reset: bool = False) -> chromadb.Collection:
 
 # ── 인제스트 ──────────────────────────────────────────────────────────────────
 
-def load_latest_json(slug: str, kind: str) -> tuple[dict, str] | None:
-    """최신 버전 JSON 로드. (raw_drf, file_path) 반환."""
-    kind_dir  = LAW_DIR / slug / kind
-    idx_path  = kind_dir / "_version_index.json"
+def load_latest_json(slug: str, kind: str) -> tuple[dict, str, str] | None:
+    """최신 버전 JSON 로드. (raw_drf, version_key, abolition_date) 반환.
+
+    abolition_date: 최신 버전이므로 항상 "" (현행 유효).
+    과거 버전의 abolition_date = 다음 버전의 eff_date.
+    """
+    kind_dir = LAW_DIR / slug / kind
+    idx_path = kind_dir / "_version_index.json"
     if not idx_path.exists():
         return None
     index = json.loads(idx_path.read_text(encoding="utf-8"))
     if not index:
         return None
-    latest = max(index.values(), key=lambda v: v.get("pdate", "0"))
+    # eff_date 기준 정렬 — 최신 버전이 마지막
+    sorted_vers = sorted(index.values(), key=lambda v: v.get("eff_date") or v.get("pdate", "0"))
+    latest = sorted_vers[-1]
     fp = kind_dir / latest["file"]
     if not fp.exists():
         return None
-    return json.loads(fp.read_text(encoding="utf-8")), latest.get("version_key", "")
+    # 최신 버전은 폐지일 없음 (현행)
+    return json.loads(fp.read_text(encoding="utf-8")), latest.get("version_key", ""), ""
 
 
 def ingest_slug_kind(col: chromadb.Collection, law_name: str, slug: str,
@@ -153,7 +169,7 @@ def ingest_slug_kind(col: chromadb.Collection, law_name: str, slug: str,
         print(f"  ⏭️  {slug}/{kind}: 파일 없음", flush=True)
         return 0
 
-    raw, version_key = result
+    raw, version_key, abolition_date = result
     law    = convert_drf_law_to_unified(raw)
     scope  = (law.get("source_type") or "LAW").upper()
     eff    = law.get("metadata", {}).get("시행일자", "")
@@ -176,7 +192,7 @@ def ingest_slug_kind(col: chromadb.Collection, law_name: str, slug: str,
             continue
         doc_id = f"{slug}__{scope}__{version_key}__{art_id}"
         docs.append(text)
-        metas.append(_article_metadata(art, law_name, slug, scope, version_key, eff))
+        metas.append(_article_metadata(art, law_name, slug, scope, version_key, eff, abolition_date))
         ids.append(doc_id)
 
     if not docs:

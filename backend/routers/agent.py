@@ -26,10 +26,12 @@ def _get_supervisor() -> SupervisorAgent:
 class InsightRequest(BaseModel):
     query: str
     case_id: Optional[str] = None
+    messages: Optional[list] = []
 
 
 class MultiRequest(BaseModel):
     query: str
+    messages: Optional[list] = []
 
 
 @router.post("/insight")
@@ -37,7 +39,7 @@ def run_insight(req: InsightRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query가 비어 있습니다.")
     try:
-        result = _get_agent().run(query=req.query, case_id=req.case_id)
+        result = _get_agent().run(query=req.query, case_id=req.case_id, messages=req.messages or [])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")
@@ -51,7 +53,7 @@ def run_multi(req: MultiRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query가 비어 있습니다.")
     try:
-        result = _get_supervisor().run(query=req.query)
+        result = _get_supervisor().run(query=req.query, messages=req.messages or [])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")

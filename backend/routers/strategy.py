@@ -36,26 +36,29 @@ def _get_risk():
 
 class CaseRequest(BaseModel):
     summary: str
-    disposition_date: Optional[str] = ""     # YYYY-MM-DD — 불복 기한 자동 계산
-    tax_amount: Optional[str] = ""           # 처분 세액 (참고용)
-    already_filed: Optional[bool] = False    # 이미 불복 절차 진행 중인지
+    disposition_date: Optional[str] = ""
+    tax_amount: Optional[str] = ""
+    already_filed: Optional[bool] = False
+    messages: Optional[list] = []
 
 
 class RebuttalRequest(BaseModel):
     disposition_text: str
-    filing_type: Optional[str] = "심판청구"        # "이의신청" | "심판청구" | "행정소송"
+    filing_type: Optional[str] = "심판청구"
     taxpayer_name: Optional[str] = ""
-    taxpayer_id: Optional[str] = ""              # 사업자등록번호 또는 주민등록번호
-    tax_office: Optional[str] = ""               # 처분청
-    disposition_date: Optional[str] = ""         # YYYY-MM-DD
+    taxpayer_id: Optional[str] = ""
+    tax_office: Optional[str] = ""
+    disposition_date: Optional[str] = ""
     tax_amount: Optional[str] = ""
-    tax_type: Optional[str] = ""                 # "법인세" | "소득세" | "부가가치세" 등
+    tax_type: Optional[str] = ""
+    messages: Optional[list] = []
 
 
 class RiskRequest(BaseModel):
     statute_name: str
     revision_summary: str
     effective_date: Optional[str] = ""
+    messages: Optional[list] = []
 
 
 @router.post("/strategy")
@@ -69,6 +72,7 @@ def analyze_strategy(req: CaseRequest):
             disposition_date=req.disposition_date or "",
             tax_amount=req.tax_amount or "",
             already_filed=req.already_filed or False,
+            messages=req.messages or [],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")
@@ -96,6 +100,7 @@ def generate_rebuttal(req: RebuttalRequest):
             disposition_date=req.disposition_date or "",
             tax_amount=req.tax_amount or "",
             tax_type=req.tax_type or "",
+            messages=req.messages or [],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")
@@ -209,6 +214,7 @@ def analyze_law_risk(req: RiskRequest):
             statute_name=req.statute_name.strip(),
             revision_summary=req.revision_summary.strip(),
             effective_date=req.effective_date or "",
+            messages=req.messages or [],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")

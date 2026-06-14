@@ -20,6 +20,7 @@ from typing import Optional, TypedDict
 from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
+from agents.conversation import build_context_query, make_history_section
 
 _llm = None
 _MAX_REFLECT = 2  # 반성 사이클 1→2회로 상향
@@ -60,6 +61,7 @@ FILING_TYPE_AGENCY = {
 
 
 class RebuttalState(TypedDict):
+    messages: list          # 이전 대화 [{role, content}]
     # 기본 입력
     disposition_text: str
     filing_type: str       # "이의신청" | "심판청구" | "행정소송"
@@ -153,9 +155,11 @@ def draft_writer_node(state: RebuttalState) -> dict:
     filing_agency = FILING_TYPE_AGENCY.get(filing_type, "")
     header = _build_header(state, filing_label, filing_agency, deadlines)
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         "당신은 조세심판원 심판관 경력의 조세전문 변호사다.\n"
-        "아래 정보를 바탕으로 실제 제출 가능한 수준의 반론 초안을 작성하라.\n\n"
+        "아래 정보를 바탕으로 실제 제출 가능한 수준의 반론 초안을 작성하라."
+        + hist_section + "\n\n"
         f"[청구 유형] {filing_type}\n\n"
         f"[불복 기한]\n{deadline_str}\n\n"
         f"[과세관청 주요 주장]\n{claims_str}\n\n"
@@ -338,8 +342,10 @@ class RebuttalAgent:
         disposition_date: str = "",
         tax_amount: str = "",
         tax_type: str = "",
+        messages: list = [],
     ) -> dict:
         initial: RebuttalState = {
+            "messages": messages,
             "disposition_text": disposition_text,
             "filing_type": filing_type,
             "taxpayer_name": taxpayer_name,

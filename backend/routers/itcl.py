@@ -18,10 +18,11 @@ def _get_agent():
 
 class ITCLRequest(BaseModel):
     query: str
-    transaction_type: Optional[str] = "기타"          # 거래 유형 — PREFERRED_METHODS 키
-    related_party_country: Optional[str] = ""        # 상대방 국가 (조세조약 확인용)
-    transaction_amount_krw: Optional[int] = 0        # 거래 금액 (원화, APA 기준 50억↑)
-    transaction_year: Optional[str] = ""             # 거래 연도 (법령 시점 참고)
+    transaction_type: Optional[str] = "기타"
+    related_party_country: Optional[str] = ""
+    transaction_amount_krw: Optional[int] = 0
+    transaction_year: Optional[str] = ""
+    messages: Optional[list] = []
 
 
 @router.post("/ask")
@@ -43,6 +44,7 @@ def itcl_ask(req: ITCLRequest):
             related_party_country=req.related_party_country or "",
             transaction_amount_krw=req.transaction_amount_krw or 0,
             transaction_year=req.transaction_year or "",
+            messages=req.messages or [],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")

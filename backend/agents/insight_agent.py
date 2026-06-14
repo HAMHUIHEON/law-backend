@@ -24,6 +24,7 @@ from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
 
+from agents.conversation import build_context_query, make_history_section
 from bravo.models_bravo import IssueLogic
 from db.graph_search import LegalGraphSearch
 from export.export_chain import ExportCChain
@@ -57,6 +58,7 @@ _MIN_RESULTS_COUNT = 3          # 결과 N건 미만이면 재시도
 class InsightState(TypedDict):
     query: str
     case_id: Optional[str]
+    messages: list   # 이전 대화 [{role, content}]
 
     # Planner 출력
     search_queries: List[str]   # 분해된 쟁점 검색어
@@ -125,7 +127,8 @@ def executor_node(state: InsightState) -> InsightState:
         statute_names가 있으면 법령명+쿼리 조합, 없으면 primary_query만 사용
     """
     queries = state["search_queries"] or [state["query"]]
-    primary_query = queries[0]
+    # 이전 대화 맥락으로 검색 쿼리 보강
+    primary_query = build_context_query(queries[0], state.get("messages") or [])
 
     # ① Neo4j 판례 검색 (유사 쟁점 + 패턴)
     s = LegalGraphSearch()
@@ -284,9 +287,11 @@ def reporter_node(state: InsightState) -> InsightState:
 
     law_section = f"\n[관련 세법 조문]\n{law_block}" if law_block else ""
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         "당신은 조세법률 전문 리서치 센터의 수석 분석관이다.\n"
-        "아래 분석 결과를 바탕으로 변호사·세무팀이 즉시 활용할 수 있는 통합 보고서를 작성하라.\n\n"
+        "아래 분석 결과를 바탕으로 변호사·세무팀이 즉시 활용할 수 있는 통합 보고서를 작성하라."
+        + hist_section + "\n\n"
         f"[분석 요청]\n{state['query']}\n\n"
         f"[유사 판례 검색 결과]\n{search_block}\n\n"
         f"[승소/패소 패턴 분석]\n{pattern_block}"
@@ -410,10 +415,11 @@ class InsightAgent:
     def __init__(self):
         self.graph = _build_graph()
 
-    def run(self, query: str, case_id: Optional[str] = None) -> dict:
+    def run(self, query: str, case_id: Optional[str] = None, messages: list = []) -> dict:
         initial: InsightState = {
             "query": query,
             "case_id": case_id,
+            "messages": messages,
             "search_queries": [],
             "statute_names": [],
             "search_results": None,

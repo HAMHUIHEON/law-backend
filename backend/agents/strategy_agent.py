@@ -20,6 +20,7 @@ from typing import Optional, TypedDict
 from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
+from agents.conversation import build_context_query, make_history_section
 
 _llm = None
 
@@ -91,6 +92,7 @@ class StrategyState(TypedDict):
     disposition_date: str   # "YYYY-MM-DD" 또는 "YYYY.MM.DD" — 기한 계산용
     tax_amount: str         # 처분 세액 (참고용)
     already_filed: bool     # 이미 이의신청/심판청구 제출 여부
+    messages: list          # 이전 대화 [{role, content}]
 
     key_facts: str
     legal_issues: list
@@ -141,7 +143,10 @@ def fact_extractor_node(state: StrategyState) -> dict:
 def case_searcher_node(state: StrategyState) -> dict:
     from db.chroma_search import search_taxlaw_prec, search_taxtr_cases, search_law_articles
 
-    combined_query = " ".join(state["legal_issues"]) + " " + state.get("tax_type", "")
+    combined_query = build_context_query(
+        " ".join(state["legal_issues"]) + " " + state.get("tax_type", ""),
+        state.get("messages") or [],
+    )
 
     court_cases = search_taxlaw_prec(combined_query, n=10)
     taxtr_cases = search_taxtr_cases(combined_query, n=6)
@@ -166,9 +171,11 @@ def strategist_node(state: StrategyState) -> dict:
     deadline_str = "\n".join(f"  - {k}: {v}" for k, v in deadlines.items())
     already_filed_note = "⚠️ 이미 이의신청/심판청구 제출됨 — 중복 제출 불가 경로 있음" if state.get("already_filed") else ""
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         "당신은 국세청 경력 10년의 세무사 겸 조세전문 변호사다.\n"
-        "아래 의뢰인 사건과 판례·재결례·조문 분석 결과를 바탕으로 전략 보고서를 작성하라.\n\n"
+        "아래 의뢰인 사건과 판례·재결례·조문 분석 결과를 바탕으로 전략 보고서를 작성하라."
+        + hist_section + "\n\n"
         f"[의뢰인 사건 요약]\n{state['client_summary']}\n\n"
         f"[핵심 사실관계]\n{state['key_facts']}\n\n"
         f"[세목] {state.get('tax_type', '미분류')}"
@@ -256,12 +263,14 @@ class StrategyAgent:
         disposition_date: str = "",
         tax_amount: str = "",
         already_filed: bool = False,
+        messages: list = [],
     ) -> dict:
         initial: StrategyState = {
             "client_summary": client_summary,
             "disposition_date": disposition_date,
             "tax_amount": tax_amount,
             "already_filed": already_filed,
+            "messages": messages,
             "key_facts": "",
             "legal_issues": [],
             "tax_type": "",

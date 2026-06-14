@@ -20,6 +20,7 @@ class TrendRequest(BaseModel):
     query: str
     start_year: Optional[int] = 2000
     end_year: Optional[int] = 2030
+    messages: Optional[list] = []
 
 
 @router.post("/ask")
@@ -32,6 +33,7 @@ def trend_ask(req: TrendRequest):
             query=req.query.strip(),
             start_year=req.start_year or 2000,
             end_year=req.end_year or 2030,
+            messages=req.messages or [],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")

@@ -22,6 +22,7 @@ class SearchRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    messages: Optional[list] = []
 
 
 @router.get("/stats")
@@ -90,7 +91,7 @@ def ask_agent(req: AskRequest):
 
     try:
         agent = TaxlawPrecAgent()
-        answer = agent.ask(req.question)
+        answer = agent.ask(req.question, messages=req.messages or [])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"에이전트 오류: {e}")
 

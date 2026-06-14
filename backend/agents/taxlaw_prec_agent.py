@@ -8,6 +8,7 @@ from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 
 from utils.llm import get_llm, DEFAULT_MODEL
+from agents.conversation import build_context_query, make_history_section
 
 _CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
 _OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -220,11 +221,12 @@ def find_winning_cases(fact_summary: str, tax_type: str = "") -> str:
 class TaxlawPrecAgent:
     """자연어 질문 → Chroma taxlaw_prec 검색 → GPT 답변 에이전트."""
 
-    def ask(self, question: str) -> str:
+    def ask(self, question: str, messages: list = []) -> str:
         try:
             col = _get_col()
+            search_q = build_context_query(question, messages)
             res = col.query(
-                query_texts=[question],
+                query_texts=[search_q],
                 n_results=min(8, col.count()),
                 include=["metadatas", "documents"],
             )
@@ -241,9 +243,11 @@ class TaxlawPrecAgent:
             context = "\n\n---\n\n".join(context_parts) or "(관련 판례 없음)"
 
             llm = get_llm(model=DEFAULT_MODEL, temperature=0)
+            hist_section = make_history_section(messages)
             prompt = (
                 "당신은 세법 전문 AI 어시스턴트입니다. "
-                "아래 법원 판례 자료를 바탕으로 질문에 답하세요.\n\n"
+                "아래 법원 판례 자료를 바탕으로 질문에 답하세요."
+                + hist_section + "\n\n"
                 f"[관련 판례]\n{context}\n\n"
                 f"[질문]\n{question}\n\n"
                 "[답변 지침]\n"

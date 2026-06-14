@@ -19,6 +19,7 @@ from typing import Optional, TypedDict
 from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
+from agents.conversation import make_history_section
 
 _llm = None
 
@@ -34,6 +35,7 @@ class RiskState(TypedDict):
     statute_name: str       # 개정된 법령명 (예: "법인세법")
     revision_summary: str   # 개정 내용 요약
     effective_date: str     # 시행일
+    messages: list          # 이전 대화 [{role, content}]
 
     affected_court_cases: Optional[list]
     affected_taxtr_cases: Optional[list]
@@ -79,8 +81,10 @@ def risk_evaluator_node(state: RiskState) -> dict:
     taxtr_str = json.dumps(taxtr_cases[:8], ensure_ascii=False, indent=2)
     articles_str = json.dumps(revised_articles, ensure_ascii=False, indent=2)
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
-        "당신은 세무·법률 전문가다. 법령 개정이 기존 판례·재결례에 미치는 영향을 분석하라.\n\n"
+        "당신은 세무·법률 전문가다. 법령 개정이 기존 판례·재결례에 미치는 영향을 분석하라."
+        + hist_section + "\n\n"
         f"[개정 법령]\n{state['statute_name']}\n\n"
         f"[개정 내용]\n{state['revision_summary']}\n\n"
         f"[시행일]\n{state['effective_date']}\n\n"
@@ -138,11 +142,12 @@ class RiskAgent:
     result["revised_articles"]      # 개정 조문
     """
 
-    def run(self, statute_name: str, revision_summary: str, effective_date: str = "") -> dict:
+    def run(self, statute_name: str, revision_summary: str, effective_date: str = "", messages: list = []) -> dict:
         initial: RiskState = {
             "statute_name": statute_name,
             "revision_summary": revision_summary,
             "effective_date": effective_date or "미상",
+            "messages": messages,
             "affected_court_cases": None,
             "affected_taxtr_cases": None,
             "revised_articles": None,

@@ -102,20 +102,57 @@ def search_taxtr_cases(
         return []
 
 
-def search_law_articles(query: str, n: int = 6) -> list:
-    """세법 조문(6,687건) 벡터 검색. document 텍스트 포함."""
+def search_law_articles(query: str, n: int = 6, target_date: str = "") -> list:
+    """세법 조문(6,687건) 벡터 검색. document 텍스트 포함.
+
+    target_date: "YYYYMMDD" 형식. 지정 시 해당 날짜에 유효한 조문만 반환.
+      effective_date <= target_date AND (abolition_date == "" OR abolition_date > target_date)
+    """
     try:
         col = _get_client().get_collection("law_articles", embedding_function=_get_ef())
+        # 날짜 필터: target_date 있을 때만 적용
+        where = None
+        if target_date:
+            td = target_date.replace("-", "")  # "2024-01-01" → "20240101"
+            where = {"$and": [
+                {"effective_date": {"$lte": td}},
+                {"$or": [
+                    {"abolition_date": {"$eq": ""}},
+                    {"abolition_date": {"$gt": td}},
+                ]},
+            ]}
+        kwargs: dict = {
+            "query_texts": [query],
+            "n_results": n,
+            "include": ["metadatas", "distances", "documents"],
+        }
+        if where:
+            kwargs["where"] = where
+        results = col.query(**kwargs)
+        docs = []
+        documents = results.get("documents", [[]])[0] or []
+        for i, (meta, dist) in enumerate(zip(results["metadatas"][0], results["distances"][0])):
+            doc_text = documents[i] if i < len(documents) else ""
+            docs.append({**meta, "document": doc_text or "", "similarity": round(1 - dist, 4)})
+        return docs
+    except Exception:
+        return []
+
+
+def search_inquiry_cases(query: str, n: int = 6) -> list:
+    """국세청 질의회신(inquiry_cases 컬렉션) 벡터 검색."""
+    try:
+        col = _get_client().get_collection("inquiry_cases", embedding_function=_get_ef())
         results = col.query(
             query_texts=[query],
-            n_results=n,
+            n_results=min(n, 50),
             include=["metadatas", "distances", "documents"],
         )
         docs = []
         documents = results.get("documents", [[]])[0] or []
         for i, (meta, dist) in enumerate(zip(results["metadatas"][0], results["distances"][0])):
             doc_text = documents[i] if i < len(documents) else ""
-            docs.append({**meta, "document": doc_text or "", "similarity": round(1 - dist, 4)})
+            docs.append({**meta, "document": (doc_text or "")[:600], "similarity": round(1 - dist, 4)})
         return docs
     except Exception:
         return []

@@ -18,6 +18,7 @@ from typing import Optional, TypedDict
 from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from langgraph.graph import END, StateGraph
+from agents.conversation import make_history_section
 
 _llm = None
 
@@ -31,6 +32,7 @@ def _get_llm():
 
 class TrendState(TypedDict):
     query: str
+    messages: list   # 이전 대화 [{role, content}]
     start_year: int
     end_year: int
 
@@ -82,9 +84,11 @@ def trend_analyzer_node(state: TrendState) -> dict:
     taxtr_str = json.dumps(taxtr_sample[:5], ensure_ascii=False, indent=2)
     sample_str = json.dumps(data.get("sample") or [], ensure_ascii=False, indent=2)
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         "당신은 조세법 전문 리서치 애널리스트다.\n"
-        "아래 판례 통계 데이터를 바탕으로 트렌드 분석 보고서를 작성하라.\n\n"
+        "아래 판례 통계 데이터를 바탕으로 트렌드 분석 보고서를 작성하라."
+        + hist_section + "\n\n"
         f"[분석 쟁점]\n{state['query']}\n\n"
         f"[분석 기간]\n{state['start_year']}년 ~ {state['end_year']}년\n\n"
         f"[연도별 납세자 승소율 통계 (법원 판례)]\n{stats_str}\n\n"
@@ -136,9 +140,10 @@ class TrendAgent:
     result["taxtr_sample"]  # 조세심판 재결례 샘플
     """
 
-    def run(self, query: str, start_year: int = 2000, end_year: int = 2030) -> dict:
+    def run(self, query: str, start_year: int = 2000, end_year: int = 2030, messages: list = []) -> dict:
         initial: TrendState = {
             "query": query,
+            "messages": messages,
             "start_year": start_year,
             "end_year": end_year,
             "trend_data": None,

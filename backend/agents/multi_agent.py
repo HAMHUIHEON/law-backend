@@ -31,6 +31,7 @@ from db.chroma_search import (
     search_pdf_court_cases as _chroma_pdf,
 )
 from issue_vector_index import load_index as _load_issue_index, search as _idx_search
+from agents.conversation import build_context_query, make_history_section
 
 # 국제조세/이전가격 관련 키워드 → ITCL 전용 fallback 쿼리 사용
 _ITCL_KEYWORDS = ["이전가격", "국제조세", "정상가격", "이전가", "BEPS", "필라", "pillar",
@@ -65,6 +66,7 @@ def _get_issue_index():
 
 class MultiAgentState(TypedDict):
     query: str
+    messages: list   # 이전 대화 [{role, content}]
 
     # Supervisor 결정
     plan: List[str]
@@ -113,10 +115,11 @@ def supervisor_node(state: MultiAgentState) -> dict:
         prec_query = _ITCL_PREC_QUERY
         taxtr_query = "이전가격 과세처분 조세심판 정상가격 경정 국외특수관계인 법인세"
     else:
+        ctx_query = build_context_query(state["query"], state.get("messages") or [])
         prompt = (
             "당신은 세법 법률 리서치 슈퍼바이저다.\n"
             "아래 질문에 대해 각 소스별 최적화 검색쿼리를 JSON으로 반환하라.\n\n"
-            f"질문: {state['query']}\n\n"
+            f"질문: {ctx_query}\n\n"
             "반환 형식 (JSON만, 다른 텍스트 없음):\n"
             '{\n'
             '  "law_query": "세법 조문 검색용 — 법령명·조문·핵심 법적 개념 키워드 중심으로 확장",\n'
@@ -301,9 +304,11 @@ def synthesizer_node(state: MultiAgentState) -> dict:
     pdf_section = f"\n[PDF 원문 판례 (이전가격·국제조세 핵심 판결)]\n{pdf_block}\n" if has_pdf else ""
     cache_section = f"\n[구조화 판결 분석 캐시 (bravo 분석 완료)]\n{cache_block}\n" if has_cache else ""
 
+    hist_section = make_history_section(state.get("messages") or [])
     prompt = (
         "당신은 세법 전문 리서치 센터의 수석 분석관이다.\n"
-        "아래 판례·재결례·법령 분석 결과를 종합해 통합 실무 보고서를 작성하라.\n\n"
+        "아래 판례·재결례·법령 분석 결과를 종합해 통합 실무 보고서를 작성하라."
+        + hist_section + "\n\n"
         f"[분석 요청]\n{state['query']}\n\n"
         f"[Neo4j 판례 검색 결과]\n{case_block}\n\n"
         f"[승소/패소 패턴]\n{pattern_block}\n"
@@ -503,9 +508,10 @@ class SupervisorAgent:
     def __init__(self):
         self.graph = _build_graph()
 
-    def run(self, query: str) -> dict:
+    def run(self, query: str, messages: list = []) -> dict:
         initial: MultiAgentState = {
             "query": query,
+            "messages": messages,
             "plan": [],
             "done_tools": [],
             "iteration": 0,
