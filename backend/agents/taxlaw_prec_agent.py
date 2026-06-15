@@ -10,7 +10,10 @@ from langchain_core.messages import HumanMessage
 from utils.llm import get_llm, DEFAULT_MODEL
 from agents.conversation import build_context_query, make_history_section
 
-_CHROMA_DIR = Path(__file__).parent.parent.parent / "vector_db" / "chroma"
+_CHROMA_DIR = Path(
+    os.environ.get("CHROMA_DIR")
+    or str(Path(__file__).parent.parent.parent / "vector_db" / "chroma")
+)
 _OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 _COLLECTION = "taxlaw_prec"
 
