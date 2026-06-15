@@ -137,13 +137,14 @@
 | ITCLAgent | `agents/itcl_agent.py` | `POST /api/itcl/ask` | Chroma 2종 + Neo4j ITCLSearch |
 | RiskAgent | `agents/risk_agent.py` | `POST /api/strategy/risk` | Chroma 3종 |
 
-**MULTI 에이전트 검색 소스 (6개)**:
+**MULTI 에이전트 검색 소스 (7개)**:
 1. `search_cases` — Neo4j 벡터 검색 (국제조세 판례)
 2. `search_law` — Chroma `law_articles` (14개 세법 조문 6,687건)
 3. `search_taxlaw_prec` — Chroma `taxlaw_prec` (NTS 법원 판례 32,628건)
 4. `search_taxtr` — Chroma `taxtr_cases` (조세심판 재결례 2,463건)
 5. `search_issue_cache` — `issue_index/issue_vectors.pkl` (사전 분석 판례 쟁점 벡터, 1021건·270판례)
 6. `search_pdf_cases` — Chroma `pdf_court_cases` (PDF 원본 판결문 560건)
+7. `search_inquiry` — Chroma `inquiry_cases` (국세청 질의회신 119,427건 — Volume 재업로드 필요)
 
 ---
 
@@ -250,7 +251,7 @@ CLERK_ISSUER=https://...clerk.accounts.dev
 
 ---
 
-## 완료 현황 (2026-06-14)
+## 완료 현황 (2026-06-15)
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
@@ -265,6 +266,42 @@ CLERK_ISSUER=https://...clerk.accounts.dev
 | MULTI UI PDF/쟁점 섹션 추가 | ✅ | `pdf_cases_context` + `issue_cache_context` 렌더링 — Vercel `e406fdf` 배포 |
 | Vercel API_BASE 수정 | ✅ | `.env.production` + fallback 코드 → Railway URL. lapis.nexus 정상 확인 (`50ee8ca`, `09a0419`) |
 | `mcp_server.py` 에이전트 툴 완성 | ✅ | 17개 툴 전부 구현. `run_supervisor_agent` 설명 6개 소스로 업데이트 |
+| MULTI inquiry_cases 7번째 도구 추가 | ✅ | `search_inquiry` 노드 — 국세청 질의회신 벡터 검색. 프론트엔드 UI 섹션 추가 (`94f7110c`, `489c473`) |
+| taxlaw_prec/taxtr CHROMA_DIR 버그 수정 | ✅ | 두 에이전트가 CHROMA_DIR env 무시하던 버그 수정 → `/api/prec/stats` 200 OK (`79b778e3`) |
+| init_chroma.py Volume 보호 강화 | ✅ | 버전파일 단독으로 스킵 판단. 동일/상위 버전 마킹 시 URL 재다운로드 차단 (`fb6e527f`) |
+
+## Railway Volume 현재 상태 (2026-06-15)
+
+| 컬렉션 | 건수 | 상태 |
+|--------|------|------|
+| taxlaw_prec | 32,628건 | ✅ 정상 |
+| taxtr_cases | 2,463건 | ✅ 정상 |
+| law_articles | 6,660건 | ✅ 정상 |
+| pdf_court_cases | 560건 | ✅ 정상 |
+| itcl | (ITCL 법령) | ✅ 정상 |
+| inquiry_cases | **0건** | ⚠️ 미복구 — SSH 재업로드 필요 |
+
+**Volume 마킹**: `.chroma_version = "v4"` 기록됨 → 다음 배포부터 URL 재다운로드 차단됨  
+**Volume 경로**: `/app/chroma` (CHROMA_DIR env var), `law-backend-volume` 마운트
+
+## inquiry_cases 복구 방법 (사용자 액션 필요)
+
+1차 선택 (권장): **GitHub Release v4 업로드**
+```bash
+# 1. GitHub Releases에서 chroma-v4 release 생성 (https://github.com/HAMHUIHEON/law-backend/releases/new)
+# 2. chroma_v4.tar.gz (1010MB) 업로드
+# 3. Railway env 업데이트:
+railway variables set CHROMA_DOWNLOAD_URL=https://github.com/HAMHUIHEON/law-backend/releases/download/chroma-v4/chroma_v4.tar.gz
+# 4. init_chroma.py의 CHROMA_VERSION = "v5" 로 업데이트 (Volume 강제 교체)
+```
+
+2차 선택: **SSH 직접 업로드 (기존 방식)**
+```bash
+# Railway SSH config가 ~/.ssh/config에 있다고 가정
+scp chroma_v4.tar.gz railway-law-backend:/tmp/
+ssh railway-law-backend "rm -rf /app/chroma && mkdir -p /app/chroma && tar xzf /tmp/chroma_v4.tar.gz -C /app/chroma --strip-components=1 && echo 'v4' > /app/chroma/.chroma_version && rm /tmp/chroma_v4.tar.gz"
+# ⚠️ 반드시 echo 'v4' > .chroma_version 포함 — 없으면 다음 deploy에 재다운로드됨
+```
 
 ## Chroma 검색 중요 주의사항
 
@@ -273,7 +310,7 @@ Chroma 기본(ONNX 384-dim) ≠ 빌드 시 사용한 OpenAI text-embedding-3-sma
 
 ## 다음 세션 시작 항목
 
-1. **질의회신 벡터 DB** — `cases/inquiry/` 다운로드 후 Chroma 빌드
+1. **inquiry_cases 복구** — 위 SSH 업로드 또는 GitHub Release v4 방법으로 복구 (v4.tar.gz 로컬에 있음)
 2. **bravo 43건 미처리** — `scripts/run_court_pipeline_parallel.py --workers 4` 재실행
 3. **Neo4j 7개 세법 인제스트 (LAW_7)** — 장기 과제
 
