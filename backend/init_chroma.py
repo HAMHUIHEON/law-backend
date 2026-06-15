@@ -21,11 +21,11 @@ def _chroma_sqlite_exists() -> bool:
 
 
 def _is_current():
-    if not _chroma_sqlite_exists():
-        return False
-    if not version_file.exists():
-        return False
-    return version_file.read_text().strip() == CHROMA_VERSION
+    # Version file alone is enough — trust it even if sqlite3 is still initializing
+    if version_file.exists() and version_file.read_text().strip() == CHROMA_VERSION:
+        return True
+    # No version file but data exists: version unknown, re-download needed
+    return False
 
 
 if _is_current():
@@ -38,6 +38,11 @@ if not CHROMA_URL:
 
 # 기존 데이터 삭제 후 재다운로드
 if CHROMA_DIR.exists():
+    existing_ver = version_file.read_text().strip() if version_file.exists() else ""
+    # 이미 동일 버전 표시가 있는데 URL이 오래된 버전이면 덮어쓰기 금지
+    if existing_ver and existing_ver >= CHROMA_VERSION:
+        print(f"[init_chroma] 이미 {existing_ver} 마킹됨 — URL 재다운로드 차단 (volume 데이터 보호)")
+        sys.exit(0)
     print(f"[init_chroma] 기존 Chroma 삭제 → 재다운로드 (버전: {CHROMA_VERSION})")
     shutil.rmtree(CHROMA_DIR)
 
