@@ -255,6 +255,20 @@ curl -X POST http://localhost:8000/api/strategy/strategy \
 
 ---
 
+## 개발 히스토리
+
+| 버전 | 핵심 변화 |
+|------|-----------|
+| v1 | RAG 기반 판례 검색 |
+| v2 | 문단 구조 복원 추가 |
+| v3 | 10단계 파이프라인 설계 |
+| v4 | Neo4j 그래프 DB 도입 |
+| v5 | 3종 보고서 + 실무 인사이트 |
+| v6 | LangGraph 기반 AI 에이전트 시스템 (4종) |
+| v7 (현재) | 10종 에이전트 + ChromaDB Railway Volume (163,738건) + 법령개정 분석 |
+
+---
+
 ## 만든 사람
 
 국세청 경력 7년 → Legal AI Product Builder
